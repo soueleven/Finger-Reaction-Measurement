@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 public class FingerGame : MonoBehaviour {
@@ -13,7 +14,9 @@ public class FingerGame : MonoBehaviour {
     [SerializeField] Text RoundText;
     [SerializeField] Text TakeTimesText;
     [SerializeField] Text UnitTimeText;
-    [SerializeField] Transform GameArea;
+    [SerializeField] RectTransform GameArea;
+    [SerializeField] RectTransform Target;
+    [SerializeField] ParticleSystem BreakEffact;
 
     double scores = 0;
     double unitScore = 0;
@@ -51,6 +54,79 @@ public class FingerGame : MonoBehaviour {
         restRound--;
         restFingerCount = fingerCounts;
         RoundText.text = "Round " + (gameRounds - restRound).ToString();
+        GenerateTarget();
+    }
+
+    Vector3 GetRandomPositionInArea()
+    {
+        float x = Random.Range(
+            GameArea.rect.x + Target.rect.width / 2,
+            GameArea.rect.x + GameArea.rect.width - Target.rect.width / 2);
+        float y = Random.Range(
+            GameArea.rect.y + Target.rect.height / 2,
+            GameArea.rect.y + GameArea.rect.height - Target.rect.height / 2);
+
+        return new Vector3(x, y, 0f);
+    }
+
+    bool IsTargetOverlapping(Collider2D col2d, List<Collider2D> col2dList)
+    {
+        if (col2dList.Count > 0)
+        {
+            Collider2D[] targets = col2dList.ToArray();
+            int count = col2d.OverlapCollider(new ContactFilter2D(), targets);
+            if (count > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    void GenerateTarget()
+    {
+        var targetList = new List<Collider2D>();
+
+        for (int i = 0; i < fingerCounts; i++)
+        {
+            GameObject target = Instantiate(Target.gameObject, GameArea);
+            target.transform.localPosition = GetRandomPositionInArea();
+            int limit = 0;
+
+            while (IsTargetOverlapping(target.GetComponent<Collider2D>(), targetList) && limit < 1000)
+            {
+                limit++;
+                target.transform.localPosition = GetRandomPositionInArea();
+            }
+
+            targetList.Add(target.GetComponent<Collider2D>());
+
+            // Touch event
+            EventTrigger eventTrigger = target.GetComponent<EventTrigger>();
+            EventTrigger.Entry entry = new EventTrigger.Entry();
+            entry.eventID = EventTriggerType.PointerDown;
+            entry.callback.AddListener((x) =>
+            {
+                TargetTouchEvent(target);
+            });
+            eventTrigger.triggers.Add(entry);
+        }
+    }
+
+    void TargetTouchEvent(GameObject target)
+    {
+        Destroy(target);
+        restFingerCount--;
+        BreakEffact.gameObject.transform.position = target.transform.position;
+        BreakEffact.Play();
+
+        if (restFingerCount == 0)
+        {
+            UnitTimeText.text = unitScore.ToString("F3") + "s";
+            roundClear = true;
+            unitScore = 0;
+        }
     }
 
     void Start()
@@ -60,36 +136,15 @@ public class FingerGame : MonoBehaviour {
 
     void Update ()
     {
-        TakeTimesText.text = scores.ToString("F3") + "s";
         unitScore += Time.deltaTime;
-
-        if (restRound != 0)
+        if (restRound != 0 || !roundClear)
         {
+            scores += Time.deltaTime;
             if (roundClear)
             {
-                // Round start
                 InitRound();
-                // Generate target
-                StartCoroutine("TestForClearTarget");
             }
-
-            scores += Time.deltaTime;
         }
-    }
-
-    IEnumerator TestForClearTarget()
-    {
-        while (restFingerCount != 0)
-        {
-            restFingerCount--;
-            float waitTime = Random.Range(0.01f, 0.5f);
-            Debug.Log(waitTime);
-            yield return new WaitForSeconds(waitTime);
-        }
-
-        UnitTimeText.text = unitScore.ToString("F3") + "s";
-        Debug.Log(UnitTimeText.text);
-        roundClear = true;
-        unitScore = 0;
+        TakeTimesText.text = scores.ToString("F3") + "s";
     }
 }
